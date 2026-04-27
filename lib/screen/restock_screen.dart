@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:math';
-import '../models/product.dart';
-import '../services/api_service.dart';
+import '../../models/product.dart';
+import '../../services/api_service.dart';
 
 class RestockScreen extends StatefulWidget {
   const RestockScreen({Key? key}) : super(key: key);
