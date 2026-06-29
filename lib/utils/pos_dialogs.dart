@@ -54,88 +54,170 @@ class PosDialogs {
     final stockCtrl = TextEditingController(text: '0');
     final formKey = GlobalKey<FormState>();
     int selectedVat = 21;
+    ProductCategory? selectedCategory;
+    final futureCategories = apiService.fetchCategories();
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          title: const Text('Nový produkt'),
-          content: SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'EAN: $barcode',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  TextFormField(
-                    controller: brandCtrl,
-                    decoration: const InputDecoration(labelText: 'Značka'),
-                    validator: (v) => v!.isEmpty ? 'Povinné' : null,
-                  ),
-                  TextFormField(
-                    controller: volumeCtrl,
-                    decoration: const InputDecoration(labelText: 'Objem'),
-                  ),
-                  TextFormField(
-                    controller: priceCtrl,
-                    decoration: const InputDecoration(labelText: 'Cena'),
-                    keyboardType: TextInputType.number,
-                  ),
-                  DropdownButtonFormField<int>(
-                    value: selectedVat,
-                    items: const [
-                      DropdownMenuItem(value: 12, child: Text('12% (Nealko)')),
-                      DropdownMenuItem(value: 21, child: Text('21% (Pivo)')),
-                    ],
-                    onChanged: (v) => selectedVat = v!,
-                  ),
-                  TextFormField(
-                    controller: stockCtrl,
-                    decoration: const InputDecoration(labelText: 'Skladem'),
-                    keyboardType: TextInputType.number,
-                  ),
-                ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setState) => WillPopScope(
+          onWillPop: () async => false,
+          child: AlertDialog(
+            title: const Text('Nový produkt'),
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'EAN: $barcode',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    TextFormField(
+                      controller: brandCtrl,
+                      decoration: const InputDecoration(labelText: 'Značka'),
+                      validator: (v) => v!.isEmpty ? 'Povinné' : null,
+                    ),
+                    TextFormField(
+                      controller: volumeCtrl,
+                      decoration: const InputDecoration(labelText: 'Objem'),
+                    ),
+                    TextFormField(
+                      controller: priceCtrl,
+                      decoration: const InputDecoration(labelText: 'Cena'),
+                      keyboardType: TextInputType.number,
+                    ),
+                    FutureBuilder<List<ProductCategory>>(
+                      future: futureCategories,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState != ConnectionState.done) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Text(
+                              'Nelze načíst kategorie: ${snapshot.error}',
+                              style: TextStyle(color: Colors.red.shade700),
+                            ),
+                          );
+                        }
+
+                        final categories = snapshot.data ?? [];
+                        if (categories.isEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Text('Žádné kategorie nebyly nalezeny.'),
+                          );
+                        }
+
+                        // Flatten all categories and their ancestors into one selectable list
+                        final Map<String, ProductCategory> unique = {};
+                        void addChain(ProductCategory c) {
+                          ProductCategory? cur = c;
+                          // collect chain from this node up to root
+                          final List<ProductCategory> chain = [];
+                          while (cur != null) {
+                            chain.add(cur);
+                            cur = cur.parent;
+                          }
+                          // add nodes from root -> leaf to keep consistent ordering
+                          for (var node in chain.reversed) {
+                            final key = node.id != 0 ? 'id:${node.id}' : 'name:${node.name}';
+                            unique.putIfAbsent(key, () => node);
+                          }
+                        }
+
+                        for (var c in categories) {
+                          addChain(c);
+                        }
+
+                        final flat = unique.values.toList()
+                          ..sort((a, b) => a.displayName.compareTo(b.displayName));
+
+                        selectedCategory ??= flat.first;
+
+                        return DropdownButtonFormField<ProductCategory>(
+                          value: selectedCategory,
+                          decoration: const InputDecoration(
+                            labelText: 'Kategorie',
+                          ),
+                          items: flat
+                              .map(
+                                (category) => DropdownMenuItem(
+                                  value: category,
+                                  child: Text(category.displayName),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) => setState(() {
+                            selectedCategory = value;
+                          }),
+                          validator: (value) =>
+                              value == null ? 'Vyberte kategorii' : null,
+                        );
+                      },
+                    ),
+                    DropdownButtonFormField<int>(
+                      value: selectedVat,
+                      items: const [
+                        DropdownMenuItem(
+                          value: 12,
+                          child: Text('12% (Nealko)'),
+                        ),
+                        DropdownMenuItem(value: 21, child: Text('21% (Pivo)')),
+                      ],
+                      onChanged: (v) => setState(() => selectedVat = v!),
+                    ),
+                    TextFormField(
+                      controller: stockCtrl,
+                      decoration: const InputDecoration(labelText: 'Skladem'),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                SystemChrome.setPreferredOrientations([
-                  DeviceOrientation.landscapeLeft,
-                  DeviceOrientation.landscapeRight,
-                ]);
-                Navigator.pop(ctx);
-              },
-              child: const Text('ZRUŠIT'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (formKey.currentState!.validate()) {
-                  await apiService.createProduct({
-                    'brand': brandCtrl.text,
-                    'volume': volumeCtrl.text,
-                    'price': priceCtrl.text,
-                    'current_stock': int.tryParse(stockCtrl.text) ?? 0,
-                    'barcode': barcode,
-                    'vat_rate': selectedVat,
-                  });
+            actions: [
+              TextButton(
+                onPressed: () {
                   SystemChrome.setPreferredOrientations([
                     DeviceOrientation.landscapeLeft,
                     DeviceOrientation.landscapeRight,
                   ]);
                   Navigator.pop(ctx);
-                  onSuccess();
-                }
-              },
-              child: const Text('ULOŽIT'),
-            ),
-          ],
+                },
+                child: const Text('ZRUŠIT'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (formKey.currentState!.validate()) {
+                    await apiService.createProduct({
+                      'brand': brandCtrl.text,
+                      'volume': volumeCtrl.text,
+                      'price': priceCtrl.text,
+                      'current_stock': int.tryParse(stockCtrl.text) ?? 0,
+                      'barcode': barcode,
+                      'vat_rate': selectedVat,
+                      'category': selectedCategory?.id,
+                    });
+                    SystemChrome.setPreferredOrientations([
+                      DeviceOrientation.landscapeLeft,
+                      DeviceOrientation.landscapeRight,
+                    ]);
+                    Navigator.pop(ctx);
+                    onSuccess();
+                  }
+                },
+                child: const Text('ULOŽIT'),
+              ),
+            ],
+          ),
         ),
       ),
     );

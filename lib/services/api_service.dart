@@ -23,7 +23,7 @@ class ApiConfig {
       // Pro emulátor: http://10.0.2.2:8000
       // Pro mobil: http://192.168.137.1:8000
 
-      return 'http://10.0.2.2:8000'; // Zkus nejdřív tuhle pro mobil
+      return 'http://192.168.137.1:8000'; // Zkus nejdřív tuhle pro mobil
     }
     return 'http://localhost:8000';
   }
@@ -46,13 +46,60 @@ class ApiService {
   static String get createReservationUrl => '$baseUrl/api/orders/reserve/';
 
   // Produkty a sklad
-  static String get allProductsUrl => '$baseUrl/api/products/all/';
+  static String get allProductsUrl => '$baseUrl/api/web/products/';
+  static String get webProductsUrl => '$baseUrl/api/web/products/';
   static String get restockUrl => '$baseUrl/api/products/restock/';
 
   // Reporty
   static String get dailyPdfUrl => '$baseUrl/api/reports/daily-pdf/';
   static String get monthlyPdfUrl => '$baseUrl/api/reports/monthly-pdf/';
   static String get createProductUrl => '$baseUrl/api/products/create/';
+  static String get categoriesUrl => '$baseUrl/api/categories/';
+
+  Future<List<ProductCategory>> fetchCategories() async {
+    final response = await http.get(
+      Uri.parse(categoriesUrl),
+      headers: {"Content-Type": "application/json"},
+    );
+
+    final String body = utf8.decode(response.bodyBytes);
+    developer.log(
+      'fetchCategories status=${response.statusCode} body=$body',
+      name: 'api.service',
+    );
+
+    if (response.statusCode == 200) {
+      final dynamic decoded = json.decode(body);
+      final List<dynamic> data;
+      if (decoded is List<dynamic>) {
+        data = decoded;
+      } else if (decoded is Map<String, dynamic> &&
+          decoded['results'] is List) {
+        data = decoded['results'];
+      } else {
+        throw Exception(
+          'Neznámý formát odpovědi kategorií: ${decoded.runtimeType}',
+        );
+      }
+
+      return data
+          .map((item) => ProductCategory.fromJson(item as Map<String, dynamic>))
+          .toList();
+    }
+
+    if (response.statusCode == 404) {
+      developer.log(
+        'Kategorie endpoint neexistuje (404); vracím prázdný seznam',
+        name: 'api.service',
+      );
+      return [];
+    }
+
+    throw Exception(
+      'Chyba při načítání kategorií (${response.statusCode}): $body',
+    );
+  }
+
   // Stáhne úplně všechny produkty
   Future<List<dynamic>> fetchAllProducts() async {
     final response = await http.get(
@@ -218,19 +265,31 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse(apiUrl),
-        headers: {
-          "Content-Type": "application/json",
-          // <--- TOTO PŘIDEJ
-        },
+        headers: {"Content-Type": "application/json"},
       );
 
       if (response.statusCode == 200) {
         // Dekódování JSONu z UTF-8 (aby fungovala česká diakritika)
         List<dynamic> body = json.decode(utf8.decode(response.bodyBytes));
         return body.map((dynamic item) => Product.fromJson(item)).toList();
-      } else {
-        throw Exception('Chyba při načítání dat z API');
       }
+
+      if (response.statusCode == 404) {
+        final fallbackResponse = await http.get(
+          Uri.parse(webProductsUrl),
+          headers: {"Content-Type": "application/json"},
+        );
+        if (fallbackResponse.statusCode == 200) {
+          List<dynamic> body = json.decode(
+            utf8.decode(fallbackResponse.bodyBytes),
+          );
+          return body.map((dynamic item) => Product.fromJson(item)).toList();
+        }
+      }
+
+      throw Exception(
+        'Chyba při načítání dat z API (${response.statusCode}): ${utf8.decode(response.bodyBytes)}',
+      );
     } catch (e) {
       throw Exception('Nelze se připojit k serveru: $e');
     }

@@ -13,8 +13,7 @@ class PosProductGrid extends StatefulWidget {
 }
 
 class _PosProductGridState extends State<PosProductGrid> {
-  int? selectedVat;
-  String? selectedBrand;
+  String? selectedCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -27,10 +26,19 @@ class _PosProductGridState extends State<PosProductGrid> {
         if (!snapshot.hasData)
           return const Center(child: CircularProgressIndicator());
 
-        List<Product> allProducts = snapshot.data!;
+        final List<Product> allProducts = snapshot.data!;
+        final List<String> categories =
+            allProducts
+                .map((p) => p.category?.displayName ?? 'Nezařazeno')
+                .toSet()
+                .toList()
+              ..sort();
 
-        if (selectedVat == null) {
-          return GridView(
+        if (selectedCategory == null) {
+          if (categories.isEmpty) {
+            return const Center(child: Text('Žádné dostupné kategorie.'));
+          }
+          return GridView.builder(
             padding: const EdgeInsets.all(12),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 400,
@@ -38,58 +46,24 @@ class _PosProductGridState extends State<PosProductGrid> {
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
             ),
-            children: [
-              _buildCategoryCard(
-                'PIVO\n(21%)',
-                Icons.sports_bar,
-                Colors.orange.shade800,
-                () => setState(() => selectedVat = 21),
-              ),
-              _buildCategoryCard(
-                'NEALKO / JÍDLO\n(12%)',
-                Icons.fastfood,
-                Colors.green.shade700,
-                () => setState(() => selectedVat = 12),
-              ),
-            ],
-          );
-        }
-
-        List<Product> filteredByVat = allProducts
-            .where((p) => p.vatRate == selectedVat)
-            .toList();
-        List<String> brands = filteredByVat
-            .map((p) => p.brand)
-            .toSet()
-            .toList();
-
-        if (selectedBrand == null) {
-          return GridView.builder(
-            padding: const EdgeInsets.all(8),
-            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: maxTileWidth,
-              childAspectRatio: 1.3,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-            ),
-            itemCount: brands.length + 1,
+            itemCount: categories.length,
             itemBuilder: (ctx, index) {
-              if (index == 0)
-                return _buildBackCard(() => setState(() => selectedVat = null));
-              String brand = brands[index - 1];
+              final category = categories[index];
               return _buildCategoryCard(
-                brand,
-                Icons.label_outline,
+                category,
+                Icons.category,
                 Colors.blueGrey.shade700,
-                () => setState(() => selectedBrand = brand),
-                compact: true,
+                () => setState(() => selectedCategory = category),
               );
             },
           );
         }
 
-        List<Product> finalProducts = filteredByVat
-            .where((p) => p.brand == selectedBrand)
+        final List<Product> finalProducts = allProducts
+            .where(
+              (p) =>
+                  (p.category?.displayName ?? 'Nezařazeno') == selectedCategory,
+            )
             .toList();
 
         return GridView.builder(
@@ -103,7 +77,9 @@ class _PosProductGridState extends State<PosProductGrid> {
           itemCount: finalProducts.length + 1,
           itemBuilder: (ctx, index) {
             if (index == 0)
-              return _buildBackCard(() => setState(() => selectedBrand = null));
+              return _buildBackCard(
+                () => setState(() => selectedCategory = null),
+              );
             return _buildProductCard(finalProducts[index - 1]);
           },
         );
@@ -175,13 +151,20 @@ class _PosProductGridState extends State<PosProductGrid> {
   Widget _buildProductCard(Product product) {
     bool isOutOfStock = product.currentStock <= 0;
     bool isLowStock = product.currentStock > 0 && product.currentStock < 5;
+    bool isOnOrder = product.isOnOrder;
 
     return Card(
       elevation: isOutOfStock ? 0 : 2,
-      color: isOutOfStock ? Colors.grey.shade200 : Colors.white,
+      color: isOutOfStock
+          ? Colors.grey.shade200
+          : isOnOrder
+          ? Colors.orange.shade50
+          : Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: isOutOfStock
+        side: isOnOrder
+            ? BorderSide(color: Colors.orange.shade300, width: 1.5)
+            : isOutOfStock
             ? BorderSide(color: Colors.grey.shade300)
             : BorderSide.none,
       ),
@@ -194,6 +177,27 @@ class _PosProductGridState extends State<PosProductGrid> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              if (isOnOrder)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade700,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'NA OBJEDNÁNÍ',
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
               Text(
                 product.brand,
                 style: TextStyle(

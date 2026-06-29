@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
 
 import '../models/product.dart';
 import '../services/api_service.dart';
@@ -12,6 +11,7 @@ import '../screen/restock_screen.dart';
 import '../widgets/pos_product_grid.dart';
 import '../widgets/pos_cart_panel.dart';
 import '../utils/pos_dialogs.dart';
+import '../screen/scanner_screen.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
@@ -41,6 +41,48 @@ class _PosScreenState extends State<PosScreen> {
     });
   }
 
+  Future<void> _handleScannedBarcode(String barcode) async {
+    try {
+      final products = await apiService.fetchProducts();
+      Product? foundProduct;
+      for (final product in products) {
+        if (product.barcode.trim() == barcode.trim()) {
+          foundProduct = product;
+          break;
+        }
+      }
+
+      if (!mounted) return;
+
+      if (foundProduct != null) {
+        context.read<CartCubit>().addProduct(foundProduct);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Přidáno: ${foundProduct.brand} ${foundProduct.volume}',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        PosDialogs.showUnknownBarcodeDialog(
+          context,
+          barcode,
+          apiService,
+          _loadProducts,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Chyba při načítání produktů: $e'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     SystemChrome.setPreferredOrientations([
@@ -50,38 +92,6 @@ class _PosScreenState extends State<PosScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     super.dispose();
-  }
-
-  void _handleScannedBarcode(String barcode) async {
-    try {
-      List<Product> allProducts = await futureProducts;
-      Product? foundProduct = allProducts
-          .where((p) => p.barcode == barcode)
-          .firstOrNull;
-
-      if (foundProduct != null && context.mounted) {
-        context.read<CartCubit>().addProduct(foundProduct);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Přidáno: ${foundProduct.brand}'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (context.mounted) {
-        PosDialogs.showUnknownBarcodeDialog(
-          context,
-          barcode,
-          apiService,
-          _loadProducts,
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Chyba při hledání produktu')),
-        );
-      }
-    }
   }
 
   @override
@@ -99,10 +109,10 @@ class _PosScreenState extends State<PosScreen> {
                 var res = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const SimpleBarcodeScannerPage(),
+                    builder: (context) => const ScannerScreen(),
                   ),
                 );
-                if (res is String && res != '-1') _handleScannedBarcode(res);
+                if (res is String) _handleScannedBarcode(res);
               },
             ),
           if (context.read<AuthCubit>().state.role == 'ADMIN')

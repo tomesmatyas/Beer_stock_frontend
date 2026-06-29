@@ -15,8 +15,8 @@ class _ImageCarouselState extends State<ImageCarousel> {
 
   final List<String> images = [
     'https://images.unsplash.com/photo-1600788886242-5c96aabe3757?q=80&w=1200&auto=format&fit=crop',
-    'https://images.unsplash.com/photo-1575037614876-c385806ac5b0?q=80&w=1200&auto=format&fit=crop',
-    'https://images.unsplash.com/photo-1505075936528-912a76f2df79?q=80&w=1200&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1600788886242-5c96aabe3757?q=80&w=1200&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1600788886242-5c96aabe3757?q=80&w=1200&auto=format&fit=crop',
   ];
 
   @override
