@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../../models/product.dart';
+import '../models/product.dart';
 import '../cubits/cart_cubit.dart';
 import 'dart:developer' as developer;
 
@@ -10,26 +10,50 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 class ApiConfig {
+  static const String _definedBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: '',
+  );
+
   static String get baseUrl {
+    final configuredBaseUrl = _definedBaseUrl.trim();
+    if (configuredBaseUrl.isNotEmpty) {
+      return configuredBaseUrl;
+    }
+
+    // In release fallback to production API unless overridden by --dart-define.
+    if (kReleaseMode) {
+      return 'https://api.skladpivark.cz';
+    }
+
     if (kIsWeb) {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
-      // Pokud běžíš na emulátoru, Android vrací 'google_sdk' nebo 'sdk_gphone'
-      // To je trochu složitější na detekci, tak můžeme použít jednoduchý trik:
-      // Pokud chceš mít obě zařízení naráz, můžeš použít IP hotspotu pro OBĚ,
-      // pokud je PC a emulátor ve stejné virtuální síti.
-
-      // NEJJEDNODUŠŠÍ CESTA:
-      // Pro emulátor: http://10.0.2.2:8000
-      // Pro mobil: http://192.168.137.1:8000
-
-      return 'http://192.168.137.1:8000'; // Zkus nejdřív tuhle pro mobil
+      return 'http://10.0.2.2:8000';
     }
     return 'http://localhost:8000';
   }
 }
 
 class ApiService {
+  static String? _accessToken;
+
+  static void setAuthToken(String token) {
+    _accessToken = token;
+  }
+
+  static void clearAuthToken() {
+    _accessToken = null;
+  }
+
+  static Map<String, String> _headers({bool requiresAuth = false}) {
+    final headers = <String, String>{"Content-Type": "application/json"};
+    if (requiresAuth && _accessToken != null && _accessToken!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_accessToken';
+    }
+    return headers;
+  }
+
   // 1. Propojení na tvůj chytrý konfigurátor
   static String get baseUrl => ApiConfig.baseUrl;
 
@@ -59,7 +83,7 @@ class ApiService {
   Future<List<ProductCategory>> fetchCategories() async {
     final response = await http.get(
       Uri.parse(categoriesUrl),
-      headers: {"Content-Type": "application/json"},
+      headers: _headers(requiresAuth: true),
     );
 
     final String body = utf8.decode(response.bodyBytes);
@@ -104,10 +128,7 @@ class ApiService {
   Future<List<dynamic>> fetchAllProducts() async {
     final response = await http.get(
       Uri.parse(allProductsUrl),
-      headers: {
-        "Content-Type": "application/json",
-        // <--- TOTO PŘIDEJ
-      },
+      headers: _headers(requiresAuth: true),
     );
 
     // --- PŘIDEJ TENTO ŘÁDEK PRO DEBUG ---
@@ -127,7 +148,7 @@ class ApiService {
       Uri.parse(
         createProductUrl,
       ), // Většinou se POST posílá na stejnou URL jako GET seznamu
-      headers: {"Content-Type": "application/json"},
+      headers: _headers(requiresAuth: true),
       body: json.encode(productData),
     );
 
@@ -143,10 +164,7 @@ class ApiService {
   Future<void> restockProducts(List<Map<String, dynamic>> items) async {
     final response = await http.post(
       Uri.parse(restockUrl),
-      headers: {
-        "Content-Type": "application/json",
-        // <--- TOTO PŘIDEJ
-      },
+      headers: _headers(requiresAuth: true),
 
       body: json.encode({"items": items}),
     );
@@ -160,10 +178,7 @@ class ApiService {
   Future<List<dynamic>> fetchPendingOrders() async {
     final response = await http.get(
       Uri.parse(pendingOrdersUrl),
-      headers: {
-        "Content-Type": "application/json",
-        // <--- TOTO PŘIDEJ
-      },
+      headers: _headers(requiresAuth: true),
     );
     if (response.statusCode == 200) {
       return json.decode(utf8.decode(response.bodyBytes));
@@ -175,10 +190,7 @@ class ApiService {
   Future<List<dynamic>> fetchOrderHistory() async {
     final response = await http.get(
       Uri.parse(historyUrl),
-      headers: {
-        "Content-Type": "application/json",
-        // <--- TOTO PŘIDEJ
-      },
+      headers: _headers(requiresAuth: true),
     );
     if (response.statusCode == 200) {
       return json.decode(utf8.decode(response.bodyBytes));
@@ -200,10 +212,7 @@ class ApiService {
 
     final response = await http.post(
       Uri.parse('$fulfillOrderUrl$orderId/fulfill/'),
-      headers: {
-        "Content-Type": "application/json",
-        // <--- TOTO PŘIDEJ
-      },
+      headers: _headers(requiresAuth: true),
       body: json.encode({"items": orderItems, "total_amount": totalAmount}),
     );
 
@@ -216,10 +225,7 @@ class ApiService {
   Future<void> cancelOrder(int orderId) async {
     final response = await http.post(
       Uri.parse('$fulfillOrderUrl$orderId/cancel/'),
-      headers: {
-        "Content-Type": "application/json",
-        // <--- TOTO PŘIDEJ
-      },
+      headers: _headers(requiresAuth: true),
     );
     if (response.statusCode != 200) {
       throw Exception('Chyba při rušení rezervace');
@@ -232,7 +238,6 @@ class ApiService {
     double totalAmount,
     int kegsRented, // <--- NOVÉ
     int kegsReturned,
-    int userId,
   ) async {
     // Převedeme naše sudy z košíku do formátu pro Django
     final List<Map<String, dynamic>> orderItems = items
@@ -243,16 +248,12 @@ class ApiService {
 
     final response = await http.post(
       Uri.parse(orderUrl),
-      headers: {
-        "Content-Type": "application/json",
-        // <--- TOTO PŘIDEJ
-      },
+      headers: _headers(requiresAuth: true),
       body: json.encode({
         "items": orderItems,
         "total_amount": totalAmount,
         "kegs_rented": kegsRented, // <--- ODESLÁNÍ DO DJANGA
         "kegs_returned": kegsReturned,
-        "user_id": userId,
       }),
     );
 
@@ -265,7 +266,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse(apiUrl),
-        headers: {"Content-Type": "application/json"},
+        headers: _headers(requiresAuth: true),
       );
 
       if (response.statusCode == 200) {
@@ -277,7 +278,7 @@ class ApiService {
       if (response.statusCode == 404) {
         final fallbackResponse = await http.get(
           Uri.parse(webProductsUrl),
-          headers: {"Content-Type": "application/json"},
+          headers: _headers(),
         );
         if (fallbackResponse.statusCode == 200) {
           List<dynamic> body = json.decode(
@@ -301,10 +302,7 @@ class ApiService {
   ) async {
     final response = await http.post(
       Uri.parse(refundUrl),
-      headers: {
-        "Content-Type": "application/json",
-        // <--- TOTO PŘIDEJ
-      },
+      headers: _headers(requiresAuth: true),
       body: json.encode({"items": items, "total_amount": totalAmount}),
     );
 
@@ -341,7 +339,7 @@ class ApiService {
   }) async {
     final response = await http.post(
       Uri.parse(createReservationUrl),
-      headers: {"Content-Type": "application/json"},
+      headers: _headers(),
       body: json.encode({
         "items": items,
         "total_amount": totalAmount,
@@ -362,13 +360,32 @@ class ApiService {
   Future<Map<String, dynamic>> login(String username, String password) async {
     final response = await http.post(
       Uri.parse(loginUrl),
-      headers: {"Content-Type": "application/json"},
+      headers: _headers(),
       body: json.encode({"username": username, "password": password}),
     );
 
     if (response.statusCode == 200) {
-      // Heslo je správně, vracíme data uživatele (včetně role)
-      return json.decode(utf8.decode(response.bodyBytes));
+      final decoded = json.decode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map<String, dynamic>) {
+        throw Exception('Neplatná odpověď serveru při přihlášení.');
+      }
+
+      final user = decoded['user'];
+      final access = decoded['access'];
+
+      if (user is! Map<String, dynamic> || access is! String) {
+        throw Exception('V odpovědi přihlášení chybí uživatel nebo token.');
+      }
+
+      setAuthToken(access);
+
+      return {
+        'id': user['id'],
+        'username': user['username'],
+        'role': user['role'],
+        'access': access,
+        'refresh': decoded['refresh'],
+      };
     } else if (response.statusCode == 401) {
       // Špatné heslo nebo jméno
       throw Exception('Nesprávné jméno nebo heslo!');
@@ -384,7 +401,7 @@ class ApiService {
 
     final response = await http.get(
       Uri.parse(url),
-      headers: {"Content-Type": "application/json"},
+      headers: _headers(requiresAuth: true),
     );
 
     if (response.statusCode == 200) {
@@ -409,7 +426,7 @@ class ApiService {
     final response = await http.put(
       // nebo http.patch podle toho, co máš v Djangu
       Uri.parse(url),
-      headers: {"Content-Type": "application/json"},
+      headers: _headers(requiresAuth: true),
       body: json.encode(updatedData),
     );
 

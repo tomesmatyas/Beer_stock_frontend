@@ -306,9 +306,6 @@ class PosCartPanel extends StatelessWidget {
   }
 
   void _handleCheckout(BuildContext context, CartState state) async {
-    final authState = context.read<AuthCubit>().state;
-    final userId = authState.userId ?? 1;
-
     try {
       if (state.isRefundMode) {
         final refundItems = state.items
@@ -327,7 +324,6 @@ class PosCartPanel extends StatelessWidget {
           state.finalTotalAmount,
           state.kegsRented,
           state.kegsReturned,
-          userId,
         );
       }
 
