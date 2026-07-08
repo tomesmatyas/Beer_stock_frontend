@@ -29,7 +29,7 @@ class ApiConfig {
     if (kIsWeb) {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8000';
+      return 'https://api.skladpivark.cz';
     }
     return 'http://localhost:8000';
   }
