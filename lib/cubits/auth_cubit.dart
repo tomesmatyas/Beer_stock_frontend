@@ -43,7 +43,8 @@ class AuthCubit extends Cubit<AuthState> {
     final accessToken = prefs.getString(_accessTokenKey);
     final refreshToken = prefs.getString(_refreshTokenKey);
 
-    final hasSession = userId != null &&
+    final hasSession =
+        userId != null &&
         username != null &&
         role != null &&
         accessToken != null &&

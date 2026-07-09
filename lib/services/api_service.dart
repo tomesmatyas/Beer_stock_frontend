@@ -41,13 +41,16 @@ class ApiService {
   static Future<bool>? _refreshingToken;
   static Future<void> Function()? _authFailureHandler;
   static Future<void> Function(String accessToken, String? refreshToken)?
-      _tokenUpdateHandler;
+  _tokenUpdateHandler;
 
   static void setAuthToken(String token) {
     _accessToken = token;
   }
 
-  static void setAuthTokens({required String accessToken, String? refreshToken}) {
+  static void setAuthTokens({
+    required String accessToken,
+    String? refreshToken,
+  }) {
     _accessToken = accessToken;
     if (refreshToken != null && refreshToken.isNotEmpty) {
       _refreshToken = refreshToken;
