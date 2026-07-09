@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 // Uprav si import podle tvé cesty v projektu
 import '../services/api_service.dart';
 
@@ -14,22 +15,25 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
   final TextEditingController userCtrl = TextEditingController();
   final TextEditingController passCtrl = TextEditingController();
 
-  void _login() async {
+  Future<void> _login() async {
     try {
       final response = await apiService.login(userCtrl.text, passCtrl.text);
-      if (response != null && response['role'] == 'ADMIN') {
-        if (context.mounted) {
-          Navigator.pushReplacementNamed(context, '/admin-editor');
-        }
+      if (!mounted) return;
+
+      if (response['role'] == 'ADMIN') {
+        Navigator.pushReplacementNamed(context, '/admin-editor');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Přístup odepřen. Nemáte roli ADMIN.')),
         );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Chyba spojení: $e')));
+      ).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
     }
   }
 
@@ -75,6 +79,17 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
               ),
             ),
             const SizedBox(height: 30),
+            if (kDebugMode) ...[
+              Text(
+                'API: ${ApiService.baseUrl}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),

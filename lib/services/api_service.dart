@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import '../models/product.dart';
 import '../cubits/cart_cubit.dart';
@@ -29,6 +30,7 @@ class ApiConfig {
     if (kIsWeb) {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
+      // Safer default for Android devices and emulators when no local backend is running.
       return 'https://api.skladpivark.cz';
     }
     return 'http://localhost:8000';
@@ -511,11 +513,28 @@ class ApiService {
 
   // --- NOVÁ FUNKCE PRO PŘIHLÁŠENÍ ---
   Future<Map<String, dynamic>> login(String username, String password) async {
-    final response = await http.post(
-      Uri.parse(loginUrl),
-      headers: _headers(),
-      body: json.encode({"username": username, "password": password}),
-    );
+    http.Response response;
+    try {
+      response = await http
+          .post(
+            Uri.parse(loginUrl),
+            headers: _headers(),
+            body: json.encode({"username": username, "password": password}),
+          )
+          .timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw Exception(
+        'API neodpovida vcas. Zkontrolujte server a URL: $loginUrl '
+        '(pro lokalni Android emulator pouzijte API_BASE_URL=http://10.0.2.2:8000).',
+      );
+    } on SocketException {
+      throw Exception(
+        'Nelze se pripojit k API. Zkontrolujte server a URL: $loginUrl '
+        '(pro lokalni Android emulator pouzijte API_BASE_URL=http://10.0.2.2:8000).',
+      );
+    } on http.ClientException catch (e) {
+      throw Exception('Chyba pripojeni k API: ${e.message}');
+    }
 
     if (response.statusCode == 200) {
       final decoded = json.decode(utf8.decode(response.bodyBytes));
@@ -546,7 +565,20 @@ class ApiService {
       // Špatné heslo nebo jméno
       throw Exception('Nesprávné jméno nebo heslo!');
     } else {
-      throw Exception('Chyba serveru při přihlašování.');
+      String serverMessage = 'Chyba serveru při přihlašování.';
+      try {
+        final decoded = json.decode(utf8.decode(response.bodyBytes));
+        if (decoded is Map<String, dynamic>) {
+          final detail = decoded['detail'] ?? decoded['error'] ?? decoded['message'];
+          if (detail is String && detail.isNotEmpty) {
+            serverMessage = detail;
+          }
+        }
+      } catch (_) {
+        // Keep default message when body is not JSON.
+      }
+
+      throw Exception('$serverMessage (HTTP ${response.statusCode})');
     }
   }
 

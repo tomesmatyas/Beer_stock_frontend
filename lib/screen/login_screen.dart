@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../cubits/auth_cubit.dart';
 import '../services/api_service.dart'; // Nesmíme zapomenout na import API
@@ -112,6 +113,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
+                if (kDebugMode) ...[
+                  Text(
+                    'API: ${ApiService.baseUrl}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
 
                 // Zobrazíme buď načítací kolečko, nebo tlačítko
                 isLoading
