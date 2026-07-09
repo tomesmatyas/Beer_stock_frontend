@@ -50,8 +50,10 @@ class PosDialogs {
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     final brandCtrl = TextEditingController();
     final volumeCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-    final stockCtrl = TextEditingController(text: '0');
+    final flavorCtrl = TextEditingController();
+    final strengthCtrl = TextEditingController();
+    final priceCtrl = TextEditingController(text: '1');
+    final stockCtrl = TextEditingController(text: '1');
     final formKey = GlobalKey<FormState>();
     int selectedVat = 21;
     ProductCategory? selectedCategory;
@@ -83,6 +85,16 @@ class PosDialogs {
                     TextFormField(
                       controller: volumeCtrl,
                       decoration: const InputDecoration(labelText: 'Objem'),
+                    ),
+                    TextFormField(
+                      controller: flavorCtrl,
+                      decoration: const InputDecoration(labelText: 'Příchuť'),
+                    ),
+                    TextFormField(
+                      controller: strengthCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Síla piva (např. 11°, 12°)',
+                      ),
                     ),
                     TextFormField(
                       controller: priceCtrl,
@@ -128,7 +140,9 @@ class PosDialogs {
                           }
                           // add nodes from root -> leaf to keep consistent ordering
                           for (var node in chain.reversed) {
-                            final key = node.id != 0 ? 'id:${node.id}' : 'name:${node.name}';
+                            final key = node.id != 0
+                                ? 'id:${node.id}'
+                                : 'name:${node.name}';
                             unique.putIfAbsent(key, () => node);
                           }
                         }
@@ -138,7 +152,9 @@ class PosDialogs {
                         }
 
                         final flat = unique.values.toList()
-                          ..sort((a, b) => a.displayName.compareTo(b.displayName));
+                          ..sort(
+                            (a, b) => a.displayName.compareTo(b.displayName),
+                          );
 
                         selectedCategory ??= flat.first;
 
@@ -200,8 +216,10 @@ class PosDialogs {
                     await apiService.createProduct({
                       'brand': brandCtrl.text,
                       'volume': volumeCtrl.text,
+                      'flavor': flavorCtrl.text,
+                      'beer_strength': strengthCtrl.text,
                       'price': priceCtrl.text,
-                      'current_stock': int.tryParse(stockCtrl.text) ?? 0,
+                      'current_stock': int.tryParse(stockCtrl.text) ?? 1,
                       'barcode': barcode,
                       'vat_rate': selectedVat,
                       'category': selectedCategory?.id,
