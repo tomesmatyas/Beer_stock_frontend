@@ -5,11 +5,15 @@ import 'cubits/cart_cubit.dart';
 import '/screen/login_screen.dart';
 import '/screen/pos_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final authCubit = AuthCubit();
+  await authCubit.restoreSession();
+
   runApp(
     MultiBlocProvider(
       providers: [
-        BlocProvider(create: (context) => AuthCubit()),
+        BlocProvider(create: (context) => authCubit),
         BlocProvider(create: (context) => CartCubit()),
       ],
       child: const PosApp(),

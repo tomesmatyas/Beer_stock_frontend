@@ -55,6 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
           userData['username'],
           userData['role'], // Django nám pošle 'ADMIN' nebo 'STAFF'
           accessToken: userData['access'],
+          refreshToken: userData['refresh'],
         );
       }
     } catch (e) {

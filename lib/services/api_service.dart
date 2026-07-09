@@ -37,13 +37,53 @@ class ApiConfig {
 
 class ApiService {
   static String? _accessToken;
+  static String? _refreshToken;
+  static Future<bool>? _refreshingToken;
+  static Future<void> Function()? _authFailureHandler;
+  static Future<void> Function(String accessToken, String? refreshToken)?
+      _tokenUpdateHandler;
 
   static void setAuthToken(String token) {
     _accessToken = token;
   }
 
+  static void setAuthTokens({required String accessToken, String? refreshToken}) {
+    _accessToken = accessToken;
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      _refreshToken = refreshToken;
+    }
+  }
+
   static void clearAuthToken() {
     _accessToken = null;
+    _refreshToken = null;
+  }
+
+  static void setAuthFailureHandler(Future<void> Function()? handler) {
+    _authFailureHandler = handler;
+  }
+
+  static void setTokenUpdateHandler(
+    Future<void> Function(String accessToken, String? refreshToken)? handler,
+  ) {
+    _tokenUpdateHandler = handler;
+  }
+
+  static Future<void> _notifyAuthFailure() async {
+    final handler = _authFailureHandler;
+    if (handler != null) {
+      await handler();
+    }
+  }
+
+  static Future<void> _notifyTokenUpdated(
+    String accessToken,
+    String? refreshToken,
+  ) async {
+    final handler = _tokenUpdateHandler;
+    if (handler != null) {
+      await handler(accessToken, refreshToken);
+    }
   }
 
   static Map<String, String> _headers({bool requiresAuth = false}) {
@@ -60,6 +100,8 @@ class ApiService {
   // 2. Ostatní adresy musí být 'get', aby se přizpůsobily aktuální baseUrl
   static String get apiUrl => '$baseUrl/api/products/';
   static String get loginUrl => '$baseUrl/api/login/';
+  static String get logoutUrl => '$baseUrl/api/logout/';
+  static String get refreshUrl => '$baseUrl/api/token/refresh/';
 
   // Objednávky a vratky
   static String get orderUrl => '$baseUrl/api/orders/create/';
@@ -80,11 +122,137 @@ class ApiService {
   static String get createProductUrl => '$baseUrl/api/products/create/';
   static String get categoriesUrl => '$baseUrl/api/categories/';
 
-  Future<List<ProductCategory>> fetchCategories() async {
-    final response = await http.get(
-      Uri.parse(categoriesUrl),
-      headers: _headers(requiresAuth: true),
+  static Future<bool> _refreshAccessToken() async {
+    final existingRefresh = _refreshingToken;
+    if (existingRefresh != null) {
+      return existingRefresh;
+    }
+
+    final refreshToken = _refreshToken;
+    if (refreshToken == null || refreshToken.isEmpty) {
+      clearAuthToken();
+      await _notifyAuthFailure();
+      return false;
+    }
+
+    final refreshFuture = _performTokenRefresh();
+    _refreshingToken = refreshFuture;
+
+    try {
+      return await refreshFuture;
+    } finally {
+      _refreshingToken = null;
+    }
+  }
+
+  static Future<bool> _performTokenRefresh() async {
+    final response = await http.post(
+      Uri.parse(refreshUrl),
+      headers: _headers(),
+      body: json.encode({'refresh': _refreshToken}),
     );
+
+    if (response.statusCode != 200) {
+      clearAuthToken();
+      await _notifyAuthFailure();
+      return false;
+    }
+
+    final decoded = json.decode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map<String, dynamic>) {
+      clearAuthToken();
+      await _notifyAuthFailure();
+      return false;
+    }
+
+    final access = decoded['access'];
+    final refresh = decoded['refresh'];
+
+    if (access is! String || access.isEmpty) {
+      clearAuthToken();
+      await _notifyAuthFailure();
+      return false;
+    }
+
+    setAuthTokens(
+      accessToken: access,
+      refreshToken: refresh is String ? refresh : _refreshToken,
+    );
+    await _notifyTokenUpdated(
+      access,
+      refresh is String ? refresh : _refreshToken,
+    );
+    return true;
+  }
+
+  static Future<http.Response> _sendWithAuthRetry(
+    Future<http.Response> Function(Map<String, String> headers) request, {
+    bool requiresAuth = false,
+  }) async {
+    var response = await request(_headers(requiresAuth: requiresAuth));
+
+    if (!requiresAuth || response.statusCode != 401) {
+      return response;
+    }
+
+    final refreshed = await _refreshAccessToken();
+    if (!refreshed) {
+      return response;
+    }
+
+    response = await request(_headers(requiresAuth: requiresAuth));
+    return response;
+  }
+
+  Future<http.Response> _get(String url, {bool requiresAuth = false}) {
+    return _sendWithAuthRetry(
+      (headers) => http.get(Uri.parse(url), headers: headers),
+      requiresAuth: requiresAuth,
+    );
+  }
+
+  Future<http.Response> _post(
+    String url, {
+    bool requiresAuth = false,
+    Object? body,
+  }) {
+    return _sendWithAuthRetry(
+      (headers) => http.post(Uri.parse(url), headers: headers, body: body),
+      requiresAuth: requiresAuth,
+    );
+  }
+
+  Future<http.Response> _put(
+    String url, {
+    bool requiresAuth = false,
+    Object? body,
+  }) {
+    return _sendWithAuthRetry(
+      (headers) => http.put(Uri.parse(url), headers: headers, body: body),
+      requiresAuth: requiresAuth,
+    );
+  }
+
+  Future<void> logout() async {
+    final refreshToken = _refreshToken;
+
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      try {
+        await http.post(
+          Uri.parse(logoutUrl),
+          headers: _headers(),
+          body: json.encode({'refresh': refreshToken}),
+        );
+      } catch (_) {
+        // Lokální odhlášení musí proběhnout i při výpadku sítě.
+      }
+    }
+
+    clearAuthToken();
+  }
+
+  Future<List<ProductCategory>> fetchCategories() async {
+    final response = await _get(categoriesUrl, requiresAuth: true);
 
     final String body = utf8.decode(response.bodyBytes);
     developer.log(
@@ -126,10 +294,7 @@ class ApiService {
 
   // Stáhne úplně všechny produkty
   Future<List<dynamic>> fetchAllProducts() async {
-    final response = await http.get(
-      Uri.parse(allProductsUrl),
-      headers: _headers(requiresAuth: true),
-    );
+    final response = await _get(allProductsUrl, requiresAuth: true);
 
     // --- PŘIDEJ TENTO ŘÁDEK PRO DEBUG ---
     developer.log('Data ze serveru: ${response.body}', name: 'api.service');
@@ -144,11 +309,9 @@ class ApiService {
 
   // Funkce pro vytvoření nového produktu
   Future<void> createProduct(Map<String, dynamic> productData) async {
-    final response = await http.post(
-      Uri.parse(
-        createProductUrl,
-      ), // Většinou se POST posílá na stejnou URL jako GET seznamu
-      headers: _headers(requiresAuth: true),
+    final response = await _post(
+      createProductUrl,
+      requiresAuth: true,
       body: json.encode(productData),
     );
 
@@ -162,10 +325,9 @@ class ApiService {
 
   // Odešle data k naskladnění
   Future<void> restockProducts(List<Map<String, dynamic>> items) async {
-    final response = await http.post(
-      Uri.parse(restockUrl),
-      headers: _headers(requiresAuth: true),
-
+    final response = await _post(
+      restockUrl,
+      requiresAuth: true,
       body: json.encode({"items": items}),
     );
 
@@ -176,10 +338,7 @@ class ApiService {
 
   // 1. Stáhne čekající rezervace
   Future<List<dynamic>> fetchPendingOrders() async {
-    final response = await http.get(
-      Uri.parse(pendingOrdersUrl),
-      headers: _headers(requiresAuth: true),
-    );
+    final response = await _get(pendingOrdersUrl, requiresAuth: true);
     if (response.statusCode == 200) {
       return json.decode(utf8.decode(response.bodyBytes));
     } else {
@@ -188,10 +347,7 @@ class ApiService {
   }
 
   Future<List<dynamic>> fetchOrderHistory() async {
-    final response = await http.get(
-      Uri.parse(historyUrl),
-      headers: _headers(requiresAuth: true),
-    );
+    final response = await _get(historyUrl, requiresAuth: true);
     if (response.statusCode == 200) {
       return json.decode(utf8.decode(response.bodyBytes));
     }
@@ -210,9 +366,9 @@ class ApiService {
         )
         .toList();
 
-    final response = await http.post(
-      Uri.parse('$fulfillOrderUrl$orderId/fulfill/'),
-      headers: _headers(requiresAuth: true),
+    final response = await _post(
+      '$fulfillOrderUrl$orderId/fulfill/',
+      requiresAuth: true,
       body: json.encode({"items": orderItems, "total_amount": totalAmount}),
     );
 
@@ -223,9 +379,9 @@ class ApiService {
 
   // 3. Zruší propadlou rezervaci (vrátí sudy na sklad)
   Future<void> cancelOrder(int orderId) async {
-    final response = await http.post(
-      Uri.parse('$fulfillOrderUrl$orderId/cancel/'),
-      headers: _headers(requiresAuth: true),
+    final response = await _post(
+      '$fulfillOrderUrl$orderId/cancel/',
+      requiresAuth: true,
     );
     if (response.statusCode != 200) {
       throw Exception('Chyba při rušení rezervace');
@@ -246,9 +402,9 @@ class ApiService {
         )
         .toList();
 
-    final response = await http.post(
-      Uri.parse(orderUrl),
-      headers: _headers(requiresAuth: true),
+    final response = await _post(
+      orderUrl,
+      requiresAuth: true,
       body: json.encode({
         "items": orderItems,
         "total_amount": totalAmount,
@@ -264,10 +420,7 @@ class ApiService {
 
   Future<List<Product>> fetchProducts() async {
     try {
-      final response = await http.get(
-        Uri.parse(apiUrl),
-        headers: _headers(requiresAuth: true),
-      );
+      final response = await _get(apiUrl, requiresAuth: true);
 
       if (response.statusCode == 200) {
         // Dekódování JSONu z UTF-8 (aby fungovala česká diakritika)
@@ -276,10 +429,7 @@ class ApiService {
       }
 
       if (response.statusCode == 404) {
-        final fallbackResponse = await http.get(
-          Uri.parse(webProductsUrl),
-          headers: _headers(),
-        );
+        final fallbackResponse = await _get(webProductsUrl);
         if (fallbackResponse.statusCode == 200) {
           List<dynamic> body = json.decode(
             utf8.decode(fallbackResponse.bodyBytes),
@@ -300,9 +450,9 @@ class ApiService {
     List<Map<String, dynamic>> items,
     double totalAmount,
   ) async {
-    final response = await http.post(
-      Uri.parse(refundUrl),
-      headers: _headers(requiresAuth: true),
+    final response = await _post(
+      refundUrl,
+      requiresAuth: true,
       body: json.encode({"items": items, "total_amount": totalAmount}),
     );
 
@@ -377,7 +527,10 @@ class ApiService {
         throw Exception('V odpovědi přihlášení chybí uživatel nebo token.');
       }
 
-      setAuthToken(access);
+      setAuthTokens(
+        accessToken: access,
+        refreshToken: decoded['refresh'] is String ? decoded['refresh'] : null,
+      );
 
       return {
         'id': user['id'],
@@ -399,10 +552,7 @@ class ApiService {
     // Pokud nemáš adresu nahoře v proměnných, složíme ji takto:
     final url = '$baseUrl/api/reports/dashboard/';
 
-    final response = await http.get(
-      Uri.parse(url),
-      headers: _headers(requiresAuth: true),
-    );
+    final response = await _get(url, requiresAuth: true);
 
     if (response.statusCode == 200) {
       // Dekódujeme JSON od Djanga
@@ -423,10 +573,9 @@ class ApiService {
     // Pokud ji máš jinak, uprav ji:
     final url = '$baseUrl/api/products/$productId/update/';
 
-    final response = await http.put(
-      // nebo http.patch podle toho, co máš v Djangu
-      Uri.parse(url),
-      headers: _headers(requiresAuth: true),
+    final response = await _put(
+      url,
+      requiresAuth: true,
       body: json.encode(updatedData),
     );
 
