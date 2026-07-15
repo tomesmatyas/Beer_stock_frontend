@@ -569,7 +569,8 @@ class ApiService {
       try {
         final decoded = json.decode(utf8.decode(response.bodyBytes));
         if (decoded is Map<String, dynamic>) {
-          final detail = decoded['detail'] ?? decoded['error'] ?? decoded['message'];
+          final detail =
+              decoded['detail'] ?? decoded['error'] ?? decoded['message'];
           if (detail is String && detail.isNotEmpty) {
             serverMessage = detail;
           }

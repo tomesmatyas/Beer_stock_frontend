@@ -117,10 +117,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Text(
                     'API: ${ApiService.baseUrl}',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[700],
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                   ),
                   const SizedBox(height: 12),
                 ],

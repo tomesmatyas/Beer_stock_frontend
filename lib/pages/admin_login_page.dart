@@ -29,9 +29,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
       );
     }
@@ -83,10 +81,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
               Text(
                 'API: ${ApiService.baseUrl}',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[700],
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
               ),
               const SizedBox(height: 12),
             ],
